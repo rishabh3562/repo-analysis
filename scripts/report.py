@@ -5,9 +5,9 @@ Generate daily markdown report from analyses and commit to repo.
 import os
 import sys
 import json
-import pymongo
 import subprocess
-from datetime import datetime, timedelta
+import pymongo
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -21,6 +21,20 @@ def get_mongo_client():
         serverSelectionTimeoutMS=30000
     )
 
+def commit_and_push(report_file, message):
+    """Commit and push a file to the repo."""
+    try:
+        subprocess.run(["git", "add", report_file], cwd=REPO_PATH, check=True, capture_output=True)
+        result = subprocess.run(["git", "commit", "-m", message], cwd=REPO_PATH, capture_output=True, text=True)
+        if result.returncode == 0:
+            subprocess.run(["git", "push"], cwd=REPO_PATH, check=True, capture_output=True)
+            print(f"Committed and pushed: {report_file}")
+        else:
+            if "nothing to commit" not in result.stdout:
+                print(f"Commit skipped: {result.stdout.strip()}")
+    except subprocess.CalledProcessError as e:
+        print(f"Git error: {e}")
+
 def main():
     mongo = get_mongo_client()
     db = mongo["ai_agents"]
@@ -30,12 +44,12 @@ def main():
     run_id = cron_runs.insert_one({
         "job_name": "daily-report",
         "status": "running",
-        "started_at": datetime.utcnow(),
+        "started_at": datetime.now(timezone.utc),
     }).inserted_id
     
     try:
         # Get analyses from last 24h
-        since = datetime.utcnow() - timedelta(hours=24)
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
         recent = list(analyses.find({"created_at": {"$gte": since}}).sort("created_at", -1))
         
         # Group by type
@@ -47,9 +61,9 @@ def main():
             by_type[t].append(a)
         
         # Generate markdown
-        date_str = datetime.utcnow().strftime("%Y-%m-%d")
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         md = f"# Daily Report — {date_str}\n\n"
-        md += f"Generated: {datetime.utcnow().isoformat()}Z\n\n"
+        md += f"Generated: {datetime.now(timezone.utc).isoformat()}Z\n\n"
         md += f"Total analyses: {len(recent)}\n\n"
         
         for t, items in by_type.items():
@@ -71,21 +85,19 @@ def main():
         with open(report_file, "w") as f:
             f.write(md)
         
-        # Git commit
-        subprocess.run(["git", "add", report_file], cwd=REPO_PATH, check=True)
-        subprocess.run(["git", "commit", "-m", f"chore: daily report {date_str}"], cwd=REPO_PATH, check=True)
-        subprocess.run(["git", "push"], cwd=REPO_PATH, check=True)
+        # Git commit and push
+        commit_and_push(report_file, f"chore: daily report {date_str}")
         
         cron_runs.update_one(
             {"_id": run_id},
-            {"$set": {"status": "completed", "completed_at": datetime.utcnow(), "report": report_file}}
+            {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc), "report": report_file}}
         )
         print(f"Report generated and pushed: {report_file}")
         
     except Exception as e:
         cron_runs.update_one(
             {"_id": run_id},
-            {"$set": {"status": "failed", "completed_at": datetime.utcnow(), "error": str(e)}}
+            {"$set": {"status": "failed", "completed_at": datetime.now(timezone.utc), "error": str(e)}}
         )
         print(f"Error: {e}", file=sys.stderr)
         raise
