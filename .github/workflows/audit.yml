@@ -1,0 +1,31 @@
+name: Daily GitHub Audit
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 2 AM UTC daily
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      MONGO_AI_URI: ${{ secrets.MONGO_AI_URI }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install pymongo requests
+      
+      - name: Run audit
+        run: python scripts/audit.py
+      
+      - name: Log result
+        if: always()
+        run: echo "Audit completed with status ${{ job.status }}"
