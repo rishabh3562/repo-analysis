@@ -1,0 +1,33 @@
+# Secrets / credentials — this repo is public, never commit real values
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+.git-credentials
+*_token
+*_secret
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Local scratch (agent tool config dirs, empty on disk anyway)
+.qodo/
