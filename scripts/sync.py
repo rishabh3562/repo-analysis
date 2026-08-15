@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Incremental GitHub sync. Fetches new commits, issues, PRs since last run. Commits report to GitHub.
+With full observability: timing, metrics, structured logging.
 """
 import os
 import re
@@ -10,7 +11,9 @@ import requests
 import pymongo
 from datetime import datetime, timezone
 
+# Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step
 
 MONGO_URI = os.environ.get("MONGO_AI_URI", "mongodb+srv://Hermes:Hermes54*@cluster0.rzg43g9.mongodb.net/?appName=Cluster0")
 API = "https://api.github.com"
@@ -112,22 +115,18 @@ def commit_and_push(report_file, message):
         print(f"Git error: {e}")
 
 def main():
+    run_id = init_job("github-sync")
     token = get_github_token()
     mongo = get_mongo_client()
     db = mongo["ai_agents"]
     dumps = db["dumps"]
     repos_coll = db["repos"]
-    cron_runs = db["cron_runs"]
-    
-    run_id = cron_runs.insert_one({
-        "job_name": "github-sync",
-        "status": "running",
-        "started_at": datetime.now(timezone.utc),
-    }).inserted_id
     
     try:
         # Get tracked repos from cache
-        tracked = list(repos_coll.find({"private": False}, {"full_name": 1}))
+        with timed_step("fetch_tracked_repos"):
+            tracked = list(repos_coll.find({"private": False}, {"full_name": 1}))
+        log_metric("repos_tracked", len(tracked))
         print(f"Syncing {len(tracked)} public repos...")
         
         total_events = 0
@@ -135,64 +134,69 @@ def main():
         
         for repo in tracked:
             full_name = repo["full_name"]
-            last_sync = get_last_sync(mongo, full_name)
-            events = fetch_repo_events(token, full_name, last_sync)
-            
-            event_types = {}
-            for e in events:
-                event_types[e.get("type", "unknown")] = event_types.get(e.get("type", "unknown"), 0) + 1
-            
-            if events:
-                dump_doc = {
-                    "source": "github-sync",
-                    "repo": full_name,
-                    "payload": {"events": events, "count": len(events)},
-                    "tags": ["sync", "events", "github"],
-                    "created_at": datetime.now(timezone.utc),
-                }
-                dumps.insert_one(dump_doc)
-                total_events += len(events)
-                print(f"  {full_name}: {len(events)} new events")
+            with timed_step(f"sync_{full_name.replace('/', '_')}"):
+                last_sync = get_last_sync(mongo, full_name)
+                events = fetch_repo_events(token, full_name, last_sync)
                 
-                repo_events.append({
-                    "repo": full_name,
-                    "count": len(events),
-                    "event_types": event_types,
-                })
-            else:
-                repo_events.append({
-                    "repo": full_name,
-                    "count": 0,
-                    "event_types": {},
-                })
-            
-            update_last_sync(mongo, full_name)
+                event_types = {}
+                for e in events:
+                    event_types[e.get("type", "unknown")] = event_types.get(e.get("type", "unknown"), 0) + 1
+                
+                if events:
+                    dump_doc = {
+                        "source": "github-sync",
+                        "repo": full_name,
+                        "payload": {"events": events, "count": len(events)},
+                        "tags": ["sync", "events", "github"],
+                        "created_at": datetime.now(timezone.utc),
+                    }
+                    dumps.insert_one(dump_doc)
+                    total_events += len(events)
+                    print(f"  {full_name}: {len(events)} new events")
+                    
+                    repo_events.append({
+                        "repo": full_name,
+                        "count": len(events),
+                        "event_types": event_types,
+                    })
+                else:
+                    repo_events.append({
+                        "repo": full_name,
+                        "count": 0,
+                        "event_types": {},
+                    })
+                
+                update_last_sync(mongo, full_name)
+        
+        log_metric("total_events_synced", total_events)
+        log_metric("repos_with_events", sum(1 for e in repo_events if e["count"] > 0))
         
         # Generate and commit report
         if repo_events:
-            md = generate_sync_report(repo_events)
-            reports_dir = os.path.join(REPO_PATH, "reports")
-            os.makedirs(reports_dir, exist_ok=True)
-            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            report_file = os.path.join(reports_dir, f"{date_str}-sync.md")
+            with timed_step("generate_report"):
+                md = generate_sync_report(repo_events)
+                reports_dir = os.path.join(REPO_PATH, "reports")
+                os.makedirs(reports_dir, exist_ok=True)
+                date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                report_file = os.path.join(reports_dir, f"{date_str}-sync.md")
+                
+                with open(report_file, "w") as f:
+                    f.write(md)
             
-            with open(report_file, "w") as f:
-                f.write(md)
-            
-            commit_and_push(report_file, f"chore: sync report {date_str}")
+            with timed_step("commit_push"):
+                commit_and_push(report_file, f"chore: sync report {date_str}")
         
-        cron_runs.update_one(
-            {"_id": run_id},
-            {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc), "events_synced": total_events}}
+        complete_job(
+            status="completed",
+            events_synced=total_events,
+            repos_synced=len(repo_events),
+            repos_with_events=sum(1 for e in repo_events if e["count"] > 0),
+            report_file=report_file if repo_events else None,
         )
         print(f"Sync complete. {total_events} new events.")
         
     except Exception as e:
-        cron_runs.update_one(
-            {"_id": run_id},
-            {"$set": {"status": "failed", "completed_at": datetime.now(timezone.utc), "error": str(e)}}
-        )
-        print(f"Error: {e}", file=sys.stderr)
+        fail_job(e)
         raise
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Full GitHub profile audit. Stores results in MongoDB dumps collection and commits report to GitHub.
+With full observability: timing, metrics, structured logging.
 """
 import os
 import re
@@ -13,6 +14,7 @@ from datetime import datetime, timezone
 
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step
 
 MONGO_URI = os.environ.get("MONGO_AI_URI", "mongodb+srv://Hermes:Hermes54*@cluster0.rzg43g9.mongodb.net/?appName=Cluster0")
 GITHUB_USER = "rishabh3562"
@@ -164,28 +166,24 @@ def commit_and_push(report_file, message):
         print(f"Git error: {e}")
 
 def main():
+    run_id = init_job("github-audit")
     token = get_github_token()
     mongo = get_mongo_client()
     db = mongo["ai_agents"]
     dumps = db["dumps"]
     repos_coll = db["repos"]
-    cron_runs = db["cron_runs"]
-    
-    run_id = cron_runs.insert_one({
-        "job_name": "github-audit",
-        "status": "running",
-        "started_at": datetime.now(timezone.utc),
-    }).inserted_id
     
     try:
-        print("Fetching user...")
-        user = fetch_user(token)
+        with timed_step("fetch_user"):
+            user = fetch_user(token)
+        log_metric("user_login", user.get("login"))
         
-        print("Fetching all repos...")
-        repos = fetch_all_repos(token)
+        with timed_step("fetch_repos"):
+            repos = fetch_all_repos(token)
+        log_metric("total_repos_fetched", len(repos))
         
-        print(f"Analyzing {len(repos)} repos...")
-        analysis = analyze_repos(repos)
+        with timed_step("analyze_repos"):
+            analysis = analyze_repos(repos)
         analysis["user"] = {
             "login": user["login"],
             "name": user.get("name"),
@@ -194,54 +192,71 @@ def main():
             "followers": user["followers"],
             "following": user["following"],
         }
+        log_metric("private_count", analysis["private_count"])
+        log_metric("public_count", analysis["public_count"])
+        log_metric("empty_descriptions", analysis["empty_descriptions"])
+        log_metric("tutorial_repos", analysis["tutorial_repos"])
         
         # Store in dumps
-        dump_doc = {
-            "source": "github-audit",
-            "payload": analysis,
-            "tags": ["audit", "profile", "github"],
-            "created_at": datetime.now(timezone.utc),
-        }
-        dumps.insert_one(dump_doc)
+        with timed_step("store_dump"):
+            dump_doc = {
+                "source": "github-audit",
+                "payload": analysis,
+                "tags": ["audit", "profile", "github"],
+                "created_at": datetime.now(timezone.utc),
+            }
+            dumps.insert_one(dump_doc)
         
         # Update repos cache
-        for r in repos:
-            repos_coll.update_one(
-                {"github_id": r["id"]},
-                {"$set": {
-                    "github_id": r["id"],
-                    "name": r["name"],
-                    "full_name": r["full_name"],
-                    "description": r.get("description"),
-                    "private": r["private"],
-                    "stargazers_count": r["stargazers_count"],
-                    "forks_count": r["forks_count"],
-                    "language": r.get("language"),
-                    "topics": r.get("topics", []),
-                    "updated_at": r["updated_at"],
-                    "pushed_at": r["pushed_at"],
-                    "html_url": r["html_url"],
-                    "last_analyzed": datetime.now(timezone.utc),
-                }},
-                upsert=True
-            )
+        with timed_step("update_repos_cache"):
+            updated = 0
+            for r in repos:
+                result = repos_coll.update_one(
+                    {"github_id": r["id"]},
+                    {"$set": {
+                        "github_id": r["id"],
+                        "name": r["name"],
+                        "full_name": r["full_name"],
+                        "description": r.get("description"),
+                        "private": r["private"],
+                        "stargazers_count": r["stargazers_count"],
+                        "forks_count": r["forks_count"],
+                        "language": r.get("language"),
+                        "topics": r.get("topics", []),
+                        "updated_at": r["updated_at"],
+                        "pushed_at": r["pushed_at"],
+                        "html_url": r["html_url"],
+                        "last_analyzed": datetime.now(timezone.utc),
+                    }},
+                    upsert=True
+                )
+                if result.upserted_id or result.modified_count:
+                    updated += 1
+        log_metric("repos_cache_updated", updated)
         
         # Generate and save markdown report
-        md = generate_markdown_report(analysis, user)
-        reports_dir = os.path.join(REPO_PATH, "reports")
-        os.makedirs(reports_dir, exist_ok=True)
-        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        report_file = os.path.join(reports_dir, f"{date_str}-audit.md")
-        
-        with open(report_file, "w") as f:
-            f.write(md)
+        with timed_step("generate_report"):
+            md = generate_markdown_report(analysis, user)
+            reports_dir = os.path.join(REPO_PATH, "reports")
+            os.makedirs(reports_dir, exist_ok=True)
+            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            report_file = os.path.join(reports_dir, f"{date_str}-audit.md")
+            
+            with open(report_file, "w") as f:
+                f.write(md)
         
         # Commit and push
-        commit_and_push(report_file, f"chore: audit report {date_str}")
+        with timed_step("commit_push"):
+            commit_and_push(report_file, f"chore: audit report {date_str}")
         
-        cron_runs.update_one(
-            {"_id": run_id},
-            {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc), "repos_analyzed": len(repos)}}
+        complete_job(
+            status="completed",
+            repos_analyzed=len(repos),
+            private_count=analysis["private_count"],
+            public_count=analysis["public_count"],
+            empty_descriptions=analysis["empty_descriptions"],
+            tutorial_repos=analysis["tutorial_repos"],
+            report_file=report_file,
         )
         
         print(f"Audit complete. {len(repos)} repos analyzed.")
@@ -251,11 +266,7 @@ def main():
         print(f"Report saved: {report_file}")
         
     except Exception as e:
-        cron_runs.update_one(
-            {"_id": run_id},
-            {"$set": {"status": "failed", "completed_at": datetime.now(timezone.utc), "error": str(e)}}
-        )
-        print(f"Error: {e}", file=sys.stderr)
+        fail_job(e)
         raise
 
 if __name__ == "__main__":

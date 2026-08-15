@@ -2,6 +2,7 @@
 """
 LLM analysis pipeline. Processes unanalyzed dumps, stores insights, and commits report to GitHub.
 Uses Nemotron 3 Ultra 550B via OpenRouter (free tier).
+With full observability: timing, metrics, structured logging.
 """
 import os
 import sys
@@ -10,7 +11,9 @@ import subprocess
 import pymongo
 from datetime import datetime, timezone
 
+# Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step
 
 MONGO_URI = os.environ.get("MONGO_AI_URI", "mongodb+srv://Hermes:Hermes54*@cluster0.rzg43g9.mongodb.net/?appName=Cluster0")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
@@ -95,111 +98,118 @@ def main():
         print("OPENROUTER_API_KEY not set", file=sys.stderr)
         sys.exit(1)
     
+    run_id = init_job("analyze-dumps")
     mongo = get_mongo_client()
     db = mongo["ai_agents"]
     dumps = db["dumps"]
     analyses = db["analyses"]
-    cron_runs = db["cron_runs"]
-    
-    run_id = cron_runs.insert_one({
-        "job_name": "analyze-dumps",
-        "status": "running",
-        "started_at": datetime.now(timezone.utc),
-    }).inserted_id
     
     try:
         # Find unanalyzed dumps
-        analyzed_ids = [a["dump_id"] for a in analyses.find({}, {"dump_id": 1})]
-        unanalyzed = list(dumps.find({
-            "tags": {"$in": ["audit", "sync"]},
-            "_id": {"$nin": analyzed_ids}
-        }).limit(10))
+        with timed_step("find_unanalyzed"):
+            analyzed_ids = [a["dump_id"] for a in analyses.find({}, {"dump_id": 1})]
+            unanalyzed = list(dumps.find({
+                "tags": {"$in": ["audit", "sync"]},
+                "_id": {"$nin": analyzed_ids}
+            }).limit(10))
         
+        log_metric("unanalyzed_found", len(unanalyzed))
         print(f"Found {len(unanalyzed)} unanalyzed dumps")
         print(f"Using model: {OPENROUTER_MODEL}")
         
         analyses_done = []
+        llm_calls = 0
+        llm_failures = 0
         
         for dump in unanalyzed:
             source = dump.get("source")
             payload = dump.get("payload", {})
             
             if source == "github-audit":
-                user = payload.get("user", {})
-                summary = f"GitHub profile audit for {user.get('login', 'unknown')}: "
-                summary += f"{payload.get('total', 0)} repos ({payload.get('private_count', 0)} private, {payload.get('public_count', 0)} public). "
-                summary += f"Empty descriptions: {payload.get('empty_descriptions', 0)}. "
-                summary += f"Tutorial repos to archive: {payload.get('tutorial_repos', 0)}. "
-                summary += f"Top starred: {', '.join([r['name'] for r in payload.get('top_public_by_stars', [])[:3]])}."
-                
-                prompt = f"""Analyze this GitHub profile audit and provide 3-5 actionable insights:
+                with timed_step(f"analyze_audit_{str(dump['_id'])[:8]}"):
+                    user = payload.get("user", {})
+                    summary = f"GitHub profile audit for {user.get('login', 'unknown')}: "
+                    summary += f"{payload.get('total', 0)} repos ({payload.get('private_count', 0)} private, {payload.get('public_count', 0)} public). "
+                    summary += f"Empty descriptions: {payload.get('empty_descriptions', 0)}. "
+                    summary += f"Tutorial repos to archive: {payload.get('tutorial_repos', 0)}. "
+                    summary += f"Top starred: {', '.join([r['name'] for r in payload.get('top_public_by_stars', [])[:3]])}."
+                    
+                    prompt = f"""Analyze this GitHub profile audit and provide 3-5 actionable insights:
 
 {json.dumps(payload, indent=2)}
 
 Focus on: repo hygiene, portfolio signal, missing opportunities, quick wins."""
-                
-                try:
-                    insights = analyze_with_llm(prompt, "You are a senior developer reviewing a GitHub profile for career impact.")
-                    result = {"summary": summary, "insights": insights, "model": OPENROUTER_MODEL}
-                except Exception as e:
-                    result = {"summary": summary, "insights": f"LLM failed: {e}", "model": OPENROUTER_MODEL}
-                
-                analysis_doc = {
-                    "dump_id": dump["_id"],
-                    "type": "profile_audit",
-                    "result": result,
-                    "model": OPENROUTER_MODEL,
-                    "created_at": datetime.now(timezone.utc),
-                }
-                analyses.insert_one(analysis_doc)
-                analyses_done.append(analysis_doc)
-                print(f"  Analyzed audit dump {dump['_id']}")
+                    
+                    try:
+                        insights = analyze_with_llm(prompt, "You are a senior developer reviewing a GitHub profile for career impact.")
+                        result = {"summary": summary, "insights": insights, "model": OPENROUTER_MODEL}
+                        llm_calls += 1
+                    except Exception as e:
+                        result = {"summary": summary, "insights": f"LLM failed: {e}", "model": OPENROUTER_MODEL}
+                        llm_failures += 1
+                    
+                    analysis_doc = {
+                        "dump_id": dump["_id"],
+                        "type": "profile_audit",
+                        "result": result,
+                        "model": OPENROUTER_MODEL,
+                        "created_at": datetime.now(timezone.utc),
+                    }
+                    analyses.insert_one(analysis_doc)
+                    analyses_done.append(analysis_doc)
+                    print(f"  Analyzed audit dump {dump['_id']}")
             
             elif source == "github-sync":
-                repo = dump.get("repo")
-                events = payload.get("events", [])
-                event_types = {}
-                for e in events:
-                    event_types[e.get("type", "unknown")] = event_types.get(e.get("type", "unknown"), 0) + 1
-                
-                summary = f"Sync for {repo}: {len(events)} events. Types: {event_types}"
-                
-                analysis_doc = {
-                    "dump_id": dump["_id"],
-                    "type": "sync_summary",
-                    "result": {"summary": summary, "event_types": event_types, "count": len(events)},
-                    "model": OPENROUTER_MODEL,
-                    "created_at": datetime.now(timezone.utc),
-                }
-                analyses.insert_one(analysis_doc)
-                analyses_done.append(analysis_doc)
-                print(f"  Analyzed sync dump {dump['_id']} ({repo})")
+                with timed_step(f"analyze_sync_{str(dump['_id'])[:8]}"):
+                    repo = dump.get("repo")
+                    events = payload.get("events", [])
+                    event_types = {}
+                    for e in events:
+                        event_types[e.get("type", "unknown")] = event_types.get(e.get("type", "unknown"), 0) + 1
+                    
+                    summary = f"Sync for {repo}: {len(events)} events. Types: {event_types}"
+                    
+                    analysis_doc = {
+                        "dump_id": dump["_id"],
+                        "type": "sync_summary",
+                        "result": {"summary": summary, "event_types": event_types, "count": len(events)},
+                        "model": OPENROUTER_MODEL,
+                        "created_at": datetime.now(timezone.utc),
+                    }
+                    analyses.insert_one(analysis_doc)
+                    analyses_done.append(analysis_doc)
+                    print(f"  Analyzed sync dump {dump['_id']} ({repo})")
+        
+        log_metric("dumps_analyzed", len(analyses_done))
+        log_metric("llm_calls", llm_calls)
+        log_metric("llm_failures", llm_failures)
         
         # Generate and commit report if any analyses were done
         if analyses_done:
-            md = generate_analysis_report(analyses_done)
-            reports_dir = os.path.join(REPO_PATH, "reports")
-            os.makedirs(reports_dir, exist_ok=True)
-            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            report_file = os.path.join(reports_dir, f"{date_str}-analysis.md")
+            with timed_step("generate_report"):
+                md = generate_analysis_report(analyses_done)
+                reports_dir = os.path.join(REPO_PATH, "reports")
+                os.makedirs(reports_dir, exist_ok=True)
+                date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                report_file = os.path.join(reports_dir, f"{date_str}-analysis.md")
+                
+                with open(report_file, "w") as f:
+                    f.write(md)
             
-            with open(report_file, "w") as f:
-                f.write(md)
-            
-            commit_and_push(report_file, f"chore: analysis report {date_str}")
+            with timed_step("commit_push"):
+                commit_and_push(report_file, f"chore: analysis report {date_str}")
         
-        cron_runs.update_one(
-            {"_id": run_id},
-            {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc), "dumps_analyzed": len(unanalyzed)}}
+        complete_job(
+            status="completed",
+            dumps_analyzed=len(analyses_done),
+            llm_calls=llm_calls,
+            llm_failures=llm_failures,
+            report_file=report_file if analyses_done else None,
         )
-        print(f"Analysis complete. {len(unanalyzed)} dumps processed.")
+        print(f"Analysis complete. {len(analyses_done)} dumps processed.")
         
     except Exception as e:
-        cron_runs.update_one(
-            {"_id": run_id},
-            {"$set": {"status": "failed", "completed_at": datetime.now(timezone.utc), "error": str(e)}}
-        )
-        print(f"Error: {e}", file=sys.stderr)
+        fail_job(e)
         raise
 
 if __name__ == "__main__":

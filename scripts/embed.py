@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate embeddings for dumps and chats for semantic search. Commits summary report to GitHub.
+With full observability: timing, metrics, structured logging.
 """
 import os
 import sys
@@ -9,7 +10,9 @@ import subprocess
 import pymongo
 from datetime import datetime, timezone
 
+# Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step
 
 MONGO_URI = os.environ.get("MONGO_AI_URI", "mongodb+srv://Hermes:Hermes54*@cluster0.rzg43g9.mongodb.net/?appName=Cluster0")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
@@ -87,88 +90,108 @@ def main():
         print("OPENROUTER_API_KEY not set", file=sys.stderr)
         sys.exit(1)
     
+    run_id = init_job("embed-new")
     mongo = get_mongo_client()
     db = mongo["ai_agents"]
     dumps = db["dumps"]
     chats = db["chats"]
     embeddings = db["embeddings"]
-    cron_runs = db["cron_runs"]
-    
-    run_id = cron_runs.insert_one({
-        "job_name": "embed-new",
-        "status": "running",
-        "started_at": datetime.now(timezone.utc),
-    }).inserted_id
     
     try:
         embedded_dumps = 0
         embedded_chats = 0
+        api_calls = 0
+        api_failures = 0
         
         # Embed unembedded dumps
-        unembedded_dumps = list(dumps.find({
-            "_id": {"$nin": [e["source_id"] for e in embeddings.find({"source_type": "dump"}, {"source_id": 1})]}
-        }).limit(50))
+        with timed_step("find_unembedded_dumps"):
+            unembedded_dumps = list(dumps.find({
+                "_id": {"$nin": [e["source_id"] for e in embeddings.find({"source_type": "dump"}, {"source_id": 1})]}
+            }).limit(50))
+        
+        log_metric("unembedded_dumps_found", len(unembedded_dumps))
         
         for dump in unembedded_dumps:
-            text = extract_text(dump)
-            if text.strip():
-                vector = get_embedding(text)
-                embeddings.insert_one({
-                    "source_type": "dump",
-                    "source_id": dump["_id"],
-                    "vector": vector,
-                    "model": EMBEDDING_MODEL,
-                    "text_preview": text[:200],
-                    "created_at": datetime.now(timezone.utc),
-                })
-                embedded_dumps += 1
+            with timed_step(f"embed_dump_{str(dump['_id'])[:8]}"):
+                text = extract_text(dump)
+                if text.strip():
+                    try:
+                        vector = get_embedding(text)
+                        embeddings.insert_one({
+                            "source_type": "dump",
+                            "source_id": dump["_id"],
+                            "vector": vector,
+                            "model": EMBEDDING_MODEL,
+                            "text_preview": text[:200],
+                            "created_at": datetime.now(timezone.utc),
+                        })
+                        embedded_dumps += 1
+                        api_calls += 1
+                    except Exception as e:
+                        api_failures += 1
+                        log_metric(f"embed_failure_dump_{str(dump['_id'])[:8]}", str(e))
         
         # Embed unembedded chats
-        unembedded_chats = list(chats.find({
-            "_id": {"$nin": [e["source_id"] for e in embeddings.find({"source_type": "chat"}, {"source_id": 1})]}
-        }).limit(50))
+        with timed_step("find_unembedded_chats"):
+            unembedded_chats = list(chats.find({
+                "_id": {"$nin": [e["source_id"] for e in embeddings.find({"source_type": "chat"}, {"source_id": 1})]}
+            }).limit(50))
+        
+        log_metric("unembedded_chats_found", len(unembedded_chats))
         
         for chat in unembedded_chats:
-            text = chat.get("content", "")
-            if text.strip():
-                vector = get_embedding(text)
-                embeddings.insert_one({
-                    "source_type": "chat",
-                    "source_id": chat["_id"],
-                    "vector": vector,
-                    "model": EMBEDDING_MODEL,
-                    "text_preview": text[:200],
-                    "created_at": datetime.now(timezone.utc),
-                })
-                embedded_chats += 1
+            with timed_step(f"embed_chat_{str(chat['_id'])[:8]}"):
+                text = chat.get("content", "")
+                if text.strip():
+                    try:
+                        vector = get_embedding(text)
+                        embeddings.insert_one({
+                            "source_type": "chat",
+                            "source_id": chat["_id"],
+                            "vector": vector,
+                            "model": EMBEDDING_MODEL,
+                            "text_preview": text[:200],
+                            "created_at": datetime.now(timezone.utc),
+                        })
+                        embedded_chats += 1
+                        api_calls += 1
+                    except Exception as e:
+                        api_failures += 1
+                        log_metric(f"embed_failure_chat_{str(chat['_id'])[:8]}", str(e))
         
         total_embedded = embedded_dumps + embedded_chats
+        log_metric("total_embedded", total_embedded)
+        log_metric("api_calls", api_calls)
+        log_metric("api_failures", api_failures)
         
         # Generate and commit report if any embeddings were created
         if total_embedded > 0:
-            md = generate_embed_report(embedded_dumps, embedded_chats)
-            reports_dir = os.path.join(REPO_PATH, "reports")
-            os.makedirs(reports_dir, exist_ok=True)
-            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            report_file = os.path.join(reports_dir, f"{date_str}-embeddings.md")
+            with timed_step("generate_report"):
+                md = generate_embed_report(embedded_dumps, embedded_chats)
+                reports_dir = os.path.join(REPO_PATH, "reports")
+                os.makedirs(reports_dir, exist_ok=True)
+                date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                report_file = os.path.join(reports_dir, f"{date_str}-embeddings.md")
+                
+                with open(report_file, "w") as f:
+                    f.write(md)
             
-            with open(report_file, "w") as f:
-                f.write(md)
-            
-            commit_and_push(report_file, f"chore: embedding report {date_str}")
+            with timed_step("commit_push"):
+                commit_and_push(report_file, f"chore: embedding report {date_str}")
         
-        cron_runs.update_one(
-            {"_id": run_id},
-            {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc), "embedded": total_embedded}}
+        complete_job(
+            status="completed",
+            embedded_dumps=embedded_dumps,
+            embedded_chats=embedded_chats,
+            total_embedded=total_embedded,
+            api_calls=api_calls,
+            api_failures=api_failures,
+            report_file=report_file if total_embedded > 0 else None,
         )
         print(f"Embedding complete. {total_embedded} new vectors ({embedded_dumps} dumps, {embedded_chats} chats).")
         
     except Exception as e:
-        cron_runs.update_one(
-            {"_id": run_id},
-            {"$set": {"status": "failed", "completed_at": datetime.now(timezone.utc), "error": str(e)}}
-        )
-        print(f"Error: {e}", file=sys.stderr)
+        fail_job(e)
         raise
 
 if __name__ == "__main__":
