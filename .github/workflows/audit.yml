@@ -11,6 +11,8 @@ jobs:
     env:
       MONGO_AI_URI: ${{ secrets.MONGO_AI_URI }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_PAT }}
+      GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+      REPO_PATH: /home/runner/work/repo-analysis/repo-analysis
     steps:
       - uses: actions/checkout@v4
       

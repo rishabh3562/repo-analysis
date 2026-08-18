@@ -12,9 +12,9 @@ from datetime import datetime, timedelta, timezone
 
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step
+from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step, safe_git_commit_push
 
-MONGO_URI = os.environ.get("MONGO_AI_URI", "mongodb+srv://Hermes:Hermes54*@cluster0.rzg43g9.mongodb.net/?appName=Cluster0")
+MONGO_URI = os.environ.get("MONGO_AI_URI", "mongodb+srv://Hermes:***@cluster0.rzg43g9.mongodb.net/?appName=Cluster0")
 REPO_PATH = os.environ.get("REPO_PATH", "/opt/data/repo-analysis")
 
 def get_mongo_client():
@@ -23,20 +23,6 @@ def get_mongo_client():
         tlsAllowInvalidCertificates=True,
         serverSelectionTimeoutMS=30000
     )
-
-def commit_and_push(report_file, message):
-    """Commit and push a file to the repo."""
-    try:
-        subprocess.run(["git", "add", report_file], cwd=REPO_PATH, check=True, capture_output=True)
-        result = subprocess.run(["git", "commit", "-m", message], cwd=REPO_PATH, capture_output=True, text=True)
-        if result.returncode == 0:
-            subprocess.run(["git", "push"], cwd=REPO_PATH, check=True, capture_output=True)
-            print(f"Committed and pushed: {report_file}")
-        else:
-            if "nothing to commit" not in result.stdout:
-                print(f"Commit skipped: {result.stdout.strip()}")
-    except subprocess.CalledProcessError as e:
-        print(f"Git error: {e}")
 
 def main():
     run_id = init_job("daily-report")
@@ -92,9 +78,9 @@ def main():
             with open(report_file, "w") as f:
                 f.write(md)
         
-        # Git commit and push
+        # Git commit and push with pull-first safety
         with timed_step("commit_push"):
-            commit_and_push(report_file, f"chore: daily report {date_str}")
+            safe_git_commit_push(REPO_PATH, report_file, f"chore: daily report {date_str}")
         
         complete_job(
             status="completed",
