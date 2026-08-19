@@ -8,6 +8,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    environment: Prod
     env:
       MONGO_AI_URI: ${{ secrets.MONGO_AI_URI }}
       GITHUB_TOKEN: ${{ secrets.GH_PAT }}
