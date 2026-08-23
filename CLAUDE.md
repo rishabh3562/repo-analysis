@@ -56,6 +56,20 @@ Workflows must check out with `fetch-depth: 0` and `token: ${{ secrets.GH_PAT }}
 and configure a git identity, or the scripts' pull-before-push cannot rebase or
 push and each run drifts from `main`.
 
+**Before ever running `filter-repo`/force-push again:** the 2026-08-15 rewrite
+got silently clobbered back to the leaked history, most likely by Hermes's own
+persistent clone (`REPO_PATH=/opt/data/repo-analysis`, referenced as a script
+default — this is a long-lived external checkout, not an ephemeral Actions
+runner) pushing its stale pre-rewrite lineage after the rewrite. A second purge
+needs Hermes paused or its clone re-cloned around the rewrite, or it will
+happen again. GitHub Actions runners are not the risk here (fresh checkout
+every run); the persistent external clone is.
+
+`complete_job(...)` status can be `"completed_push_failed"` (report generated,
+but `safe_git_commit_push` returned `False`) — check `cron_runs.report_pushed`
+in Mongo, not just `status == "completed"`, when auditing whether reports
+actually made it to GitHub.
+
 ## Conventions
 
 - **Never add a `Co-Authored-By: Claude` (or similar) trailer to commits.**
