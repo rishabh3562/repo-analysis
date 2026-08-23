@@ -15,8 +15,18 @@ jobs:
       GH_PAT: ${{ secrets.GH_PAT }}
       REPO_PATH: /home/runner/work/repo-analysis/repo-analysis
     steps:
+      # fetch-depth: 0 — the scripts rebase onto origin/main before pushing;
+      # a shallow clone makes that rebase fail and the run diverges from main.
       - uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

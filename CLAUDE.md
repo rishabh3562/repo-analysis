@@ -15,8 +15,15 @@ Because both sides push independently, always `git pull` before making changes.
 ## Layout
 
 - `scripts/common.py` — shared helpers: `get_mongo_client()`, `get_github_token()`,
-  `commit_and_push()`. All pipeline scripts import from here — don't re-duplicate
-  these into individual scripts.
+  `safe_git_pull()`, `safe_git_commit_push()` (+ `commit_and_push()` wrapper). All
+  pipeline scripts import from here — don't re-duplicate these into individual
+  scripts. `safe_git_pull()` rebases onto `origin/main` and **aborts** on conflict
+  rather than merging; a blind merge fallback is what produced the unrelated-history
+  divergence untangled on 2026-08-23.
+- `scripts/observability.py` — job lifecycle for the cron scripts: `init_job()`,
+  `timed_step()`, `log_metric()`, `complete_job()`, `fail_job()`, writing to the
+  `cron_runs` collection. Re-exports the git helpers from `common.py` for
+  back-compat; it imports `common`, never the other way round.
 - `scripts/audit.py` — full GitHub profile audit (repo stats, tutorial-repo
   detection, missing descriptions). Writes to Mongo `dumps` + `repos` collections,
   commits `reports/<date>-audit.md`. Runs daily (`.github/workflows/audit.yml`).
@@ -38,10 +45,16 @@ Collections: `dumps` (raw audit/sync payloads), `repos` (repo cache), `analyses`
 
 ## Required environment
 
-See `.env.example`. `MONGO_AI_URI` has **no hardcoded fallback** — every script
+See `.env.example`. `MONGO_AI_URI` has **no hardcoded fallback** — `get_mongo_client()`
 raises `RuntimeError` if it's unset. Never hardcode credentials in scripts; this
-repo is public and a hardcoded Mongo URI was already leaked and rotated once
-(see `LOG.md`).
+repo is public and a hardcoded Mongo URI leaked here and is **still reachable in
+public git history** (see `LOG.md` — a 2026-08-15 history rewrite never landed on
+`origin`). Confirm with the user whether the credential has been rotated before
+assuming it's safe.
+
+Workflows must check out with `fetch-depth: 0` and `token: ${{ secrets.GH_PAT }}`,
+and configure a git identity, or the scripts' pull-before-push cannot rebase or
+push and each run drifts from `main`.
 
 ## Conventions
 

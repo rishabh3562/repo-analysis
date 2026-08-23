@@ -4,59 +4,16 @@ Incremental GitHub sync. Fetches new commits, issues, PRs since last run. Commit
 With full observability: timing, metrics, structured logging.
 """
 import os
-import re
 import sys
-import subprocess
 import requests
-import pymongo
 from datetime import datetime, timezone
 
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step, safe_git_commit_push
+from common import REPO_PATH, get_mongo_client, get_github_token, safe_git_commit_push
+from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step
 
-MONGO_URI = os.environ.get("MONGO_AI_URI", "mongodb+srv://Hermes:***@cluster0.rzg43g9.mongodb.net/?appName=Cluster0")
 API = "https://api.github.com"
-REPO_PATH = os.environ.get("REPO_PATH", "/opt/data/repo-analysis")
-
-def get_github_token():
-    # 1. Check environment variables first (for GitHub Actions, CI, etc.)
-    for env_var in ["GITHUB_TOKEN", "GITHUB_PAT", "GH_TOKEN"]:
-        token = os.environ.get(env_var)
-        if token:
-            return token
-    
-    # 2. Check ~/.env file
-    env_path = os.path.expanduser("~/.env")
-    if os.path.exists(env_path):
-        with open(env_path) as f:
-            for line in f:
-                if line.startswith("GITHUB_TOKEN="):
-                    return line.strip().split("=", 1)[1].strip().strip('"')
-    
-    # 3. Check git credential store
-    cred_path = os.path.expanduser("~/.git-credentials")
-    if os.path.exists(cred_path):
-        with open(cred_path) as f:
-            for line in f:
-                m = re.search(r'(github_pat_[^:@]+)@', line)
-                if m:
-                    return m.group(1)
-    
-    # 4. Try gh CLI
-    try:
-        return subprocess.check_output(["gh", "auth", "token"], text=True).strip()
-    except:
-        pass
-    
-    raise RuntimeError("No GitHub token found. Set GITHUB_TOKEN or GITHUB_PAT env var.")
-
-def get_mongo_client():
-    return pymongo.MongoClient(
-        MONGO_URI,
-        tlsAllowInvalidCertificates=True,
-        serverSelectionTimeoutMS=30000
-    )
 
 def get_last_sync(mongo, repo_full_name):
     db = mongo["ai_agents"]

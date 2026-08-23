@@ -6,25 +6,15 @@ With full observability: timing, metrics, structured logging.
 import os
 import sys
 import json
-import subprocess
-import pymongo
 from datetime import datetime, timezone
 
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step, safe_git_commit_push
+from common import REPO_PATH, get_mongo_client, safe_git_commit_push
+from observability import init_job, log_step, log_metric, complete_job, fail_job, timed_step
 
-MONGO_URI = os.environ.get("MONGO_AI_URI", "mongodb+srv://Hermes:***@cluster0.rzg43g9.mongodb.net/?appName=Cluster0")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
-REPO_PATH = os.environ.get("REPO_PATH", "/opt/data/repo-analysis")
-
-def get_mongo_client():
-    return pymongo.MongoClient(
-        MONGO_URI,
-        tlsAllowInvalidCertificates=True,
-        serverSelectionTimeoutMS=30000
-    )
 
 def get_embedding(text):
     import requests

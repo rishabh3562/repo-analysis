@@ -4,6 +4,54 @@ Observability log for this repo. Entries are appended by the Claude Code loop
 session (runs ~every 30 min, pulling and refining whatever Hermes pushed since
 the last cycle) and, where noted, by manual sessions. Newest entries on top.
 
+**Last checked:** 2026-08-23 — see the entry below. This line updates in place
+each cycle that finds nothing new from Hermes; a full dated entry is only added
+when a cycle actually changes something, to keep this file from bloating over a
+multi-day loop.
+
+---
+
+## 2026-08-23 — Reconciled unrelated local/remote histories (Claude, manual session)
+
+**Symptom:** `main` had diverged 17 local / 11 remote and neither push nor pull
+would go through. Root cause: `git merge-base HEAD origin/main` returned nothing
+— the two branches shared **no common ancestor at all**. The 2026-08-15
+`git filter-repo` rewrite (see entry below) replaced the local history wholesale
+but never reached `origin`, so local was a parallel rewritten lineage of the same
+commits. Confirmed by identical trees at the two `Initial commit`s (`84b99a0` /
+`da741c1`) and by `af56b3c`↔`cf22b5d` differing only in the 5 credential lines.
+
+**Fixed — local history reset onto `origin/main`, Hermes's work preserved:**
+- Backed the old lineage up as branch `backup/pre-reconcile` (nothing discarded).
+- `git reset --hard origin/main`, then cherry-picked the one commit with unique
+  content (`036d5f1` — `.gitignore`, `.env.example`, `CLAUDE.md`, `LOG.md`).
+  Dropped the 11 no-op "log cycle check" commits and the 6 rewritten duplicates
+  of commits already present in `origin`'s lineage.
+- Hand-ported the `common.py` refactor onto Hermes's post-observability scripts
+  (the old `780b5b1` patch no longer applied). Kept everything from Hermes:
+  observability instrumentation, the GH-token resolution fix, pull-before-push.
+- Re-removed the hardcoded Mongo URI fallback — this time from **six** files;
+  `scripts/observability.py` had grown its own copy that the 2026-08-15 pass
+  predated. Verified with `git grep cluster0.rzg43g9` (no hits outside this log)
+  and by importing all seven modules.
+- Moved the git helpers into `common.py` and made `safe_git_pull()` **abort** a
+  failed rebase instead of falling back to `git merge origin/main`. That merge
+  fallback was the mechanism that would have papered over the divergence.
+
+**Fixed — root cause of the drift, in `.github/workflows/{audit,sync}.yml`:**
+- `fetch-depth: 0` on checkout. The default shallow clone cannot rebase onto
+  `origin/main`, so every scheduled run's pull-before-push was silently failing.
+- `token: ${{ secrets.GH_PAT }}` on checkout, so pushes use the PAT.
+- Added a git identity step — `git commit` on a bare runner fails without one.
+
+**Verified:** `git merge-base HEAD origin/main` now resolves; `main` fast-forwards
+onto `origin/main`; all scripts byte-compile and import.
+
+**Still outstanding — user action:** the leaked Atlas password remains in public
+git history on GitHub (reachable from `origin/main`). Rotation is confirmed
+necessary, not precautionary. Purging it now requires a fresh `filter-repo` +
+force-push, which is destructive and was not done without explicit sign-off.
+
 ---
 
 ## 2026-08-15 20:57 UTC — Initial refinement pass (Claude, session start)
@@ -31,6 +79,10 @@ the code, and rewrite git history to purge the string from all past commits.
   ops need confirmation).
 - Ran `git filter-repo` to strip the leaked credential string from every commit
   in history, then force-pushed the rewritten history to `origin/main`.
+  **CORRECTION (2026-08-23): the force-push never landed on `origin`.** The
+  rewrite only ever existed in the local clone; the plaintext password is still
+  reachable from `origin/main` on public GitHub via commit `af56b3c` and its
+  descendants. See the 2026-08-23 entry.
 
 **User action required (outside this session):** rotate the `Hermes` Mongo
 Atlas user's password — the leaked value should be treated as compromised
