@@ -4,20 +4,33 @@ Observability log for this repo. Entries are appended by the Claude Code loop
 session (runs ~every 30 min, pulling and refining whatever Hermes pushed since
 the last cycle) and, where noted, by manual sessions. Newest entries on top.
 
-**Last checked:** 2026-08-23 17:42 UTC — no new commits from Hermes. Checked
-whether the push-visibility fix (previous entry) actually resolved the silent
-report-drop: `reports/` still only has the 2026-08-15 files, but `gh run list`
-shows the last sync run was 12:11 UTC, before that fix landed (~17:12 UTC) —
-the next scheduled sync (~18:11 UTC) is the first real test, not yet run.
-Nothing to conclude yet. This line updates in place each cycle that finds
-nothing new; a full dated entry is only added when a cycle actually changes
-something, to keep this file from bloating over a multi-day loop.
+**Last checked:** 2026-08-23 18:12 UTC — see entry below. This line updates in
+place each cycle that finds nothing new from Hermes; a full dated entry is only
+added when a cycle actually changes something, to keep this file from bloating
+over a multi-day loop.
 
 **Credential rotation — user decision (2026-08-23):** rotation is deferred
 intentionally, not overlooked. Do not re-raise this as an open question each
 cycle; only act if the user brings it up again or asks for a history rewrite.
 
 ---
+
+## 2026-08-23 18:12 UTC — Push-visibility fix confirmed working; trimmed noisy sync report (Claude, loop)
+
+**Pulled:** `reports/2026-08-23-sync.md`, generated 18:11 UTC by the scheduled
+`sync.yml` run — 97 repos synced, 43 new events. **This confirms the earlier
+stdout/stderr + return-value fix in `common.py` actually resolved the silent
+push failures**: this is the first new report since 2026-08-15, and it landed
+on the very next scheduled run after the fix. No longer "unconfirmed."
+
+**Refined:** `generate_sync_report()` in `scripts/sync.py` wrote one `###`
+section per tracked repo regardless of activity — in this run, 92 of 97
+sections said "Events: 0", burying the 5 repos that actually had activity.
+Changed it to only list repos with events (sorted by count, descending) and
+collapse the rest into a one-line "N other repos synced with no new events."
+Left the already-committed `2026-08-23-sync.md` as-is per the "fix the
+generator, don't hand-edit output" convention — the new format applies from
+the next run onward.
 
 ## 2026-08-23 16:58 UTC — Resumed loop session; confirmed leak still live, found silent report-push failures (Claude, loop resumed after a gap)
 
