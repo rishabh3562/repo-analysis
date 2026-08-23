@@ -37,6 +37,12 @@ commits. Confirmed by identical trees at the two `Initial commit`s (`84b99a0` /
 - Moved the git helpers into `common.py` and made `safe_git_pull()` **abort** a
   failed rebase instead of falling back to `git merge origin/main`. That merge
   fallback was the mechanism that would have papered over the divergence.
+- Reordered `safe_git_commit_push()` to `add → commit → rebase → push`. It used
+  to pull first, but `git rebase` refuses to run with a dirty worktree, and
+  `reports/<date>-*.md` is a modified tracked file on every run after the day's
+  first — so with the strict rebase, 3 of `sync.yml`'s 4 daily runs would have
+  silently dropped their report. Committing first also means a failed rebase
+  parks the report as a local commit for the next run to retry.
 
 **Fixed — root cause of the drift, in `.github/workflows/{audit,sync}.yml`:**
 - `fetch-depth: 0` on checkout. The default shallow clone cannot rebase onto

@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 """
 Observability utilities for cron jobs: structured logging, metrics, timing.
-Also provides safe git operations with pull-before-push.
+Git helpers live in common.py and are re-exported here for back-compat.
 """
-import os
-import sys
 import time
-import json
-import functools
-import subprocess
 from datetime import datetime, timezone
 from contextlib import contextmanager
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 
 from common import get_mongo_client, safe_git_pull, safe_git_commit_push  # noqa: F401 (re-exported)
 

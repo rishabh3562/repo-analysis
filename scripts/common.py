@@ -83,12 +83,15 @@ def safe_git_pull(repo_path: str = None) -> bool:
 
 
 def safe_git_commit_push(repo_path: str, file_path: str, message: str) -> bool:
-    """Commit and push a file, pulling first. Returns True if successful."""
-    try:
-        if not safe_git_pull(repo_path):
-            print("[GIT] Could not pull latest — skipping push to avoid diverging")
-            return False
+    """Commit a file, rebase onto origin/main, then push. Returns True if pushed.
 
+    Order matters: commit *before* pulling. `git rebase` refuses to run with a
+    dirty worktree, and reports/<date>-*.md is a modified tracked file on every
+    run after the day's first — pulling first would fail on those runs and drop
+    the report. Committing first also means a failed rebase leaves the report as
+    a local commit for the next run to retry, instead of losing it.
+    """
+    try:
         subprocess.run(["git", "add", file_path], cwd=repo_path, check=True, capture_output=True)
         result = subprocess.run(["git", "commit", "-m", message], cwd=repo_path, capture_output=True, text=True)
         if result.returncode != 0:
@@ -96,6 +99,10 @@ def safe_git_commit_push(repo_path: str, file_path: str, message: str) -> bool:
                 print("[GIT] Nothing to commit")
                 return True
             print(f"[GIT] Commit failed: {result.stdout.strip()}")
+            return False
+
+        if not safe_git_pull(repo_path):
+            print("[GIT] Could not rebase onto origin — commit kept locally, not pushing")
             return False
 
         subprocess.run(["git", "push"], cwd=repo_path, check=True, capture_output=True)
