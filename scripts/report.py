@@ -68,15 +68,16 @@ def main():
         
         # Git commit and push with pull-first safety
         with timed_step("commit_push"):
-            safe_git_commit_push(REPO_PATH, report_file, f"chore: daily report {date_str}")
-        
+            pushed = safe_git_commit_push(REPO_PATH, report_file, f"chore: daily report {date_str}")
+
         complete_job(
-            status="completed",
+            status="completed" if pushed else "completed_push_failed",
             analyses_reported=len(recent),
             types=dict((k, len(v)) for k, v in by_type.items()),
             report_file=report_file,
+            report_pushed=pushed,
         )
-        print(f"Report generated and pushed: {report_file}")
+        print(f"Report generated{' and pushed' if pushed else ' but push FAILED'}: {report_file}")
         
     except Exception as e:
         fail_job(e)

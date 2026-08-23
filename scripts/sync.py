@@ -139,14 +139,17 @@ def main():
                     f.write(md)
             
             with timed_step("commit_push"):
-                safe_git_commit_push(REPO_PATH, report_file, f"chore: sync report {date_str}")
-        
+                pushed = safe_git_commit_push(REPO_PATH, report_file, f"chore: sync report {date_str}")
+        else:
+            pushed = None
+
         complete_job(
-            status="completed",
+            status="completed" if pushed is not False else "completed_push_failed",
             events_synced=total_events,
             repos_synced=len(repo_events),
             repos_with_events=sum(1 for e in repo_events if e["count"] > 0),
             report_file=report_file if repo_events else None,
+            report_pushed=pushed,
         )
         print(f"Sync complete. {total_events} new events.")
         

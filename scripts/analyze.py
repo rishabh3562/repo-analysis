@@ -173,14 +173,17 @@ Focus on: repo hygiene, portfolio signal, missing opportunities, quick wins."""
                     f.write(md)
             
             with timed_step("commit_push"):
-                safe_git_commit_push(REPO_PATH, report_file, f"chore: analysis report {date_str}")
-        
+                pushed = safe_git_commit_push(REPO_PATH, report_file, f"chore: analysis report {date_str}")
+        else:
+            pushed = None
+
         complete_job(
-            status="completed",
+            status="completed" if pushed is not False else "completed_push_failed",
             dumps_analyzed=len(analyses_done),
             llm_calls=llm_calls,
             llm_failures=llm_failures,
             report_file=report_file if analyses_done else None,
+            report_pushed=pushed,
         )
         print(f"Analysis complete. {len(analyses_done)} dumps processed.")
         

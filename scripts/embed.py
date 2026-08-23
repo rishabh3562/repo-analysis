@@ -153,15 +153,18 @@ def main():
                     f.write(md)
             
             with timed_step("commit_push"):
-                safe_git_commit_push(REPO_PATH, report_file, f"chore: embedding report {date_str}")
-        
+                pushed = safe_git_commit_push(REPO_PATH, report_file, f"chore: embedding report {date_str}")
+        else:
+            pushed = None
+
         complete_job(
-            status="completed",
+            status="completed" if pushed is not False else "completed_push_failed",
             embedded_dumps=embedded_dumps,
             embedded_chats=embedded_chats,
             total_embedded=total_embedded,
             api_calls=api_calls,
             api_failures=api_failures,
+            report_pushed=pushed,
             report_file=report_file if total_embedded > 0 else None,
         )
         print(f"Embedding complete. {total_embedded} new vectors ({embedded_dumps} dumps, {embedded_chats} chats).")

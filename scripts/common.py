@@ -67,14 +67,14 @@ def safe_git_pull(repo_path: str = None) -> bool:
     """
     repo_path = repo_path or REPO_PATH
     try:
-        subprocess.run(["git", "fetch", "origin"], cwd=repo_path, check=True, capture_output=True)
+        subprocess.run(["git", "fetch", "origin"], cwd=repo_path, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        print(f"[GIT] Fetch failed: {e}")
+        print(f"[GIT] Fetch failed: {(e.stderr or str(e)).strip()}")
         return False
 
     result = subprocess.run(["git", "rebase", "origin/main"], cwd=repo_path, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"[GIT] Rebase failed, aborting cleanly: {result.stderr.strip()}")
+        print(f"[GIT] Rebase failed, aborting cleanly: {(result.stderr or result.stdout).strip()}")
         subprocess.run(["git", "rebase", "--abort"], cwd=repo_path, capture_output=True)
         return False
 
@@ -92,24 +92,28 @@ def safe_git_commit_push(repo_path: str, file_path: str, message: str) -> bool:
     a local commit for the next run to retry, instead of losing it.
     """
     try:
-        subprocess.run(["git", "add", file_path], cwd=repo_path, check=True, capture_output=True)
+        subprocess.run(["git", "add", file_path], cwd=repo_path, check=True, capture_output=True, text=True)
         result = subprocess.run(["git", "commit", "-m", message], cwd=repo_path, capture_output=True, text=True)
         if result.returncode != 0:
             if "nothing to commit" in result.stdout:
                 print("[GIT] Nothing to commit")
                 return True
-            print(f"[GIT] Commit failed: {result.stdout.strip()}")
+            print(f"[GIT] Commit failed: {(result.stdout + result.stderr).strip()}")
             return False
 
         if not safe_git_pull(repo_path):
             print("[GIT] Could not rebase onto origin — commit kept locally, not pushing")
             return False
 
-        subprocess.run(["git", "push"], cwd=repo_path, check=True, capture_output=True)
+        push = subprocess.run(["git", "push"], cwd=repo_path, capture_output=True, text=True)
+        if push.returncode != 0:
+            print(f"[GIT] Push failed: {(push.stderr or push.stdout).strip()}")
+            return False
         print(f"[GIT] Committed and pushed: {file_path}")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"[GIT] Push failed: {e}")
+        stderr = getattr(e, "stderr", None) or ""
+        print(f"[GIT] Command failed: {e}: {stderr.strip()}")
         return False
 
 

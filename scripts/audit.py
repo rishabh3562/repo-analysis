@@ -201,16 +201,17 @@ def main():
         
         # Commit and push with pull-first safety
         with timed_step("commit_push"):
-            safe_git_commit_push(REPO_PATH, report_file, f"chore: audit report {date_str}")
-        
+            pushed = safe_git_commit_push(REPO_PATH, report_file, f"chore: audit report {date_str}")
+
         complete_job(
-            status="completed",
+            status="completed" if pushed else "completed_push_failed",
             repos_analyzed=len(repos),
             private_count=analysis["private_count"],
             public_count=analysis["public_count"],
             empty_descriptions=analysis["empty_descriptions"],
             tutorial_repos=analysis["tutorial_repos"],
             report_file=report_file,
+            report_pushed=pushed,
         )
         
         print(f"Audit complete. {len(repos)} repos analyzed.")
