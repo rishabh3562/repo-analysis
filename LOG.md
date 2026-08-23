@@ -4,11 +4,10 @@ Observability log for this repo. Entries are appended by the Claude Code loop
 session (runs ~every 30 min, pulling and refining whatever Hermes pushed since
 the last cycle) and, where noted, by manual sessions. Newest entries on top.
 
-**Last checked:** 2026-08-23 22:12 UTC — no new commits from Hermes (several
-cron firings queued up and landed together this round; treated as one cycle).
-This line updates in place each cycle that finds nothing new; a full dated
-entry is only added when a cycle actually changes something, to keep this file
-from bloating over a multi-day loop.
+**Last checked:** 2026-08-23 22:42 UTC — no new commits from Hermes. This line
+updates in place each cycle that finds nothing new; a full dated entry is only
+added when a cycle actually changes something, to keep this file from bloating
+over a multi-day loop.
 
 **Credential rotation — user decision (2026-08-23):** rotation is deferred
 intentionally, not overlooked. Do not re-raise this as an open question each
