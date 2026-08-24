@@ -4,14 +4,24 @@ Observability log for this repo. Entries are appended by the Claude Code loop
 session (runs ~every 30 min, pulling and refining whatever Hermes pushed since
 the last cycle) and, where noted, by manual sessions. Newest entries on top.
 
-**Last checked:** 2026-08-24 00:12 UTC — no new commits from Hermes. This line
-updates in place each cycle that finds nothing new; a full dated entry is only
+**Last checked:** 2026-08-24 00:42 UTC — see entry below. This line updates in
+place each cycle that finds nothing new from Hermes; a full dated entry is only
 added when a cycle actually changes something, to keep this file from bloating
 over a multi-day loop.
 
 **Credential rotation — user decision (2026-08-23):** rotation is deferred
 intentionally, not overlooked. Do not re-raise this as an open question each
 cycle; only act if the user brings it up again or asks for a history rewrite.
+
+---
+
+## 2026-08-24 00:42 UTC — Second sync report confirms trimmed format is live (Claude, loop)
+
+**Pulled:** `reports/2026-08-24-sync.md` (00:28 UTC scheduled run) — 97 repos,
+51 events. Report already used the trimmed format from the 2026-08-23 refine
+(only active repos listed, rest collapsed to one line): 5 active repos shown,
+"*92 other repos synced with no new events.*" Confirms that fix is holding
+across runs, not a one-off. Nothing to refine this round — report is clean.
 
 ---
 
