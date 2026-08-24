@@ -4,10 +4,22 @@ Observability log for this repo. Entries are appended by the Claude Code loop
 session (runs ~every 30 min, pulling and refining whatever Hermes pushed since
 the last cycle) and, where noted, by manual sessions. Newest entries on top.
 
-**Last checked:** 2026-08-24 02:42 UTC — no new commits from Hermes. This line
-updates in place each cycle that finds nothing new; a full dated entry is only
+**Last checked:** 2026-08-24 03:12 UTC — see entry below. This line updates in
+place each cycle that finds nothing new from Hermes; a full dated entry is only
 added when a cycle actually changes something, to keep this file from bloating
 over a multi-day loop.
+
+---
+
+## 2026-08-24 03:12 UTC — First successful daily audit report since the push-fix (Claude, loop)
+
+**Pulled:** `reports/2026-08-24-audit.md` (03:02 UTC scheduled run) — 180 repos
+(+1 since Aug 15: `github-daily-reports`), 83 private/97 public. First `audit.yml`
+report to land since 2026-08-15 — confirms the push-visibility fix holds for
+`audit.py`'s path too, not just `sync.py`'s (which was already confirmed on
+2026-08-24 00:42). Both scheduled workflows are now reliably publishing.
+Content/structure already well-formed (unlike the old sync report, this one
+never listed every zero-activity repo) — nothing to refine this round.
 
 **Credential rotation — user decision (2026-08-23):** rotation is deferred
 intentionally, not overlooked. Do not re-raise this as an open question each
