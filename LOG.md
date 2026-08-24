@@ -4,10 +4,26 @@ Observability log for this repo. Entries are appended by the Claude Code loop
 session (runs ~every 30 min, pulling and refining whatever Hermes pushed since
 the last cycle) and, where noted, by manual sessions. Newest entries on top.
 
-**Last checked:** 2026-08-24 03:42 UTC — no new commits from Hermes. This line
-updates in place each cycle that finds nothing new; a full dated entry is only
+**Last checked:** 2026-08-24 08:34 UTC — see entry below. This line updates in
+place each cycle that finds nothing new from Hermes; a full dated entry is only
 added when a cycle actually changes something, to keep this file from bloating
 over a multi-day loop.
+
+---
+
+## 2026-08-24 08:34 UTC — Noted: same-day sync reports overwrite each other (Claude, loop)
+
+**Pulled:** `reports/2026-08-24-sync.md` updated by the 06:31 UTC scheduled
+run — total events 51→60, since it's the same filename as the 00:28 UTC run
+from earlier today. `sync.yml` runs every 6h but `sync.py` names the report
+`{date}-sync.md` (day granularity), so each same-day run **overwrites** the
+previous run's report rather than appending — the 00:28 run's data is gone,
+only the latest run's numbers survive in git history for today. Content/format
+still clean (trimmed no-activity-repo list holds). Not treating this as a bug
+to fix unprompted — it may be intentional ("one report per day, latest wins")
+rather than a defect, and multiple/day reports would be a bigger behavior
+change. Flagging here in case the user wants intra-day runs preserved
+(timestamped filenames, or append instead of overwrite).
 
 ---
 
