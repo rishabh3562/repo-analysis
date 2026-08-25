@@ -4,10 +4,23 @@ Observability log for this repo. Entries are appended by the Claude Code loop
 session (runs ~every 30 min, pulling and refining whatever Hermes pushed since
 the last cycle) and, where noted, by manual sessions. Newest entries on top.
 
-**Last checked:** 2026-08-24 17:12 UTC — no new commits from Hermes. This line
-updates in place each cycle that finds nothing new; a full dated entry is only
+**Last checked:** 2026-08-25 11:39 UTC — see entry below. This line updates in
+place each cycle that finds nothing new from Hermes; a full dated entry is only
 added when a cycle actually changes something, to keep this file from bloating
 over a multi-day loop.
+
+---
+
+## 2026-08-25 11:39 UTC — Four routine reports landed during a cron gap (Claude, loop)
+
+**Gap:** last cycle ran 2026-08-24 17:12 UTC; this one picked up at 2026-08-25
+11:39 UTC (~18h gap — session-only cron dying between messages, same known
+behavior as before, not a new problem).
+
+**Pulled:** `2026-08-24-sync.md` (overwritten, 65 events), `2026-08-25-sync.md`
+(70 events, 06:23 UTC run), `2026-08-25-audit.md` (03:02 UTC run — 180 repos,
+unchanged from 2026-08-24). All four used the trimmed sync format and the
+already-well-formed audit format correctly. Nothing broken, nothing to refine.
 
 ---
 
