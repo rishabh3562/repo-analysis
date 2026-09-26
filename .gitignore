@@ -8,6 +8,9 @@ credentials.json
 .git-credentials
 *_token
 *_secret
+*.p12
+*.pfx
+service-account*.json
 
 # Python
 __pycache__/
@@ -19,15 +22,30 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+.ipynb_checkpoints/
+
+# Logs / local run output (published reports live in reports/ and ARE tracked)
+*.log
+logs/
 
 # OS cruft
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Editor / IDE
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
+
+# Claude Code per-user local settings (shared .claude/settings.json is fine)
+.claude/settings.local.json
 
 # Local scratch (agent tool config dirs, empty on disk anyway)
 .qodo/

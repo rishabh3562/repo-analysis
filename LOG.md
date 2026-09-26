@@ -11,6 +11,25 @@ over a multi-day loop.
 
 ---
 
+## 2026-09-26 — Paused GitHub Actions workflows; .gitignore hardening (Claude, manual)
+
+- Disabled both workflows via `gh workflow disable` at the user's request:
+  `Daily GitHub Audit` (`audit.yml`) and `GitHub Sync (6h)` (`sync.yml`). Re-enable
+  with `gh workflow enable <name>`. Last report on `main` is 2026-09-14. Hermes's
+  persistent clone may still push if it runs on its own scheduler.
+- Pulled 95 commits of routine Hermes reports (up to `2026-09-14`); local tree was
+  otherwise clean — nothing uncommitted to review.
+- Re-scanned tracked files for credentials (Mongo URIs with passwords, GitHub/
+  OpenRouter/AWS tokens): none found. `LOG.md` mentions the cluster host with the
+  password masked.
+- `.gitignore`: added more secret patterns (`*.p12`, `*.pfx`,
+  `service-account*.json`), Python test/build output, `*.log`/`logs/`,
+  `desktop.ini`, editor backups, `.claude/settings.local.json`.
+- **Still open:** audit reports continue to publish private repo names in this
+  public repo (every `*-audit.md`, not just 2026-08-15). Needs a user decision.
+
+---
+
 ## 2026-08-25 11:39 UTC — Four routine reports landed during a cron gap (Claude, loop)
 
 **Gap:** last cycle ran 2026-08-24 17:12 UTC; this one picked up at 2026-08-25
