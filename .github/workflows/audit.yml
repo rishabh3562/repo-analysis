@@ -1,9 +1,7 @@
 name: Daily GitHub Audit
 
 on:
-  schedule:
-    - cron: '0 2 * * *'  # 2 AM UTC daily
-  workflow_dispatch:
+  workflow_dispatch:  # schedule paused — re-add cron to resume
 
 jobs:
   audit:

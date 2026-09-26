@@ -1,9 +1,7 @@
 name: GitHub Sync (6h)
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'  # Every 6 hours
-  workflow_dispatch:
+  workflow_dispatch:  # schedule paused — re-add cron to resume
 
 jobs:
   sync:
